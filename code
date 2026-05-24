@@ -1,0 +1,129 @@
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <Servo.h>
+
+// WiFi
+const char* ssid = "Abii";
+const char* password = "abisha303";
+
+// Web server
+ESP8266WebServer server(80);
+
+// Ultrasonic pins
+#define trig1 D5
+#define echo1 D6
+
+#define trig2 D1
+#define echo2 D2
+
+// Servo
+#define SERVO_PIN D8
+Servo myServo;
+
+bool lidOpen = false;
+
+// Distance values
+float userDist = 0;
+float binDist = 0;
+
+// Distance function (improved)
+float getDistance(int trig, int echo) {
+  digitalWrite(trig, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(trig, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trig, LOW);
+
+  long duration = pulseIn(echo, HIGH, 25000);
+
+  if (duration == 0) return 999; // no signal
+
+  float distance = duration * 0.034 / 2;
+  return distance;
+}
+
+// Webpage
+void handleRoot() {
+  String html = "<html><head><title>Smart Dustbin</title></head><body>";
+  html += "<h1>Smart Dustbin Status</h1>";
+  html += "<p>User Distance: " + String(userDist) + " cm</p>";
+  html += "<p>Bin Distance: " + String(binDist) + " cm</p>";
+
+  if (binDist < 10) {
+    html += "<h2 style='color:red;'>⚠ Dustbin FULL</h2>";
+  } else {
+    html += "<h2 style='color:green;'>Bin OK</h2>";
+  }
+
+  html += "</body></html>";
+  server.send(200, "text/html", html);
+}
+
+void setup() {
+  Serial.begin(9600);
+
+  pinMode(trig1, OUTPUT);
+  pinMode(echo1, INPUT);
+
+  pinMode(trig2, OUTPUT);
+  pinMode(echo2, INPUT);
+
+  myServo.attach(SERVO_PIN);
+  myServo.write(0);
+
+  // WiFi connect
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nWiFi Connected!");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+
+  // Web server
+  server.on("/", handleRoot);
+  server.begin();
+  Serial.println("Web Server Started...");
+}
+
+void loop() {
+
+  server.handleClient();
+
+  // Read sensors
+  userDist = getDistance(trig1, echo1);
+  delay(50);   // important delay between sensors
+  binDist  = getDistance(trig2, echo2);
+
+  Serial.print("User: ");
+  Serial.print(userDist);
+  Serial.print(" cm | Bin: ");
+  Serial.print(binDist);
+  Serial.println(" cm");
+
+  // 🔄 Servo control (stable)
+  if (userDist < 30 && !lidOpen) {
+    Serial.println("Opening Lid...");
+    myServo.write(90);
+    lidOpen = true;
+    delay(2000);  // hold open
+  }
+
+  if (userDist > 35 && lidOpen) {
+    Serial.println("Closing Lid...");
+    myServo.write(0);
+    lidOpen = false;
+  }
+
+  // Bin full alert
+  if (binDist < 10) {
+    Serial.println("⚠ Dustbin FULL!");
+  }
+
+  delay(300);
+}
